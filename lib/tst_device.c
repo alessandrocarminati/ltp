@@ -526,8 +526,8 @@ void tst_find_backing_dev(const char *path, char *dev)
 	unsigned int dev_major, dev_minor, line_mjr, line_mnr;
 	unsigned int len, best_match_len = 1;
 	char mnt_point[PATH_MAX];
-	char tmpbuf1[PATH_MAX];
-	char tmpbuf2[PATH_MAX];
+	char devnum_info_fn[PATH_MAX];
+	char new_dev_fn_buf[PATH_MAX];
 
 	if (stat(path, &buf) < 0)
 		tst_brkm(TWARN | TERRNO, NULL, "stat() failed");
@@ -564,22 +564,18 @@ void tst_find_backing_dev(const char *path, char *dev)
 	if (!*dev)
 		tst_brkm(TBROK, NULL, "Cannot find block device for %s", path);
 
-	if (stat(dev, &buf) < 0) {
-		if (strcmp("/dev/root", dev) != 0) {
-			tst_brkm(TWARN | TERRNO, NULL, "stat(%s) failed", dev);
-		} else {
-			sprintf(tmpbuf1, "/sys/dev/block/%d:%d/uevent", dev_major, dev_minor);
-			file = SAFE_FOPEN(NULL, tmpbuf1, "r");
-			while (fgets(line, sizeof(line), file)) {
-				if (sscanf(line, "%[^=]=%s", tmpbuf1, tmpbuf2) != 2)
-					continue;
-				if (strcmp("DEVNAME", tmpbuf1) == 0) {
-					sprintf(dev, "/dev/%s", tmpbuf2);
-					break;
-				}
+	if (stat(dev, &buf) < 0) && (strcmp("/dev/root", dev)==0) {
+		sprintf(devnum_info_fn, "/sys/dev/block/%d:%d/uevent", dev_major, dev_minor);
+		file = SAFE_FOPEN(NULL, devnum_info_fn, "r");
+		while (fgets(line, sizeof(line), file)) {
+			if (sscanf(line, "%[^=]=%s", devnum_info_fn, new_dev_fn_buf) != 2)
+				continue;
+			if (strcmp("DEVNAME", devnum_info_fn) == 0) {
+				sprintf(dev, "/dev/%s", new_dev_fn_buf);
+				break;
 			}
-			SAFE_FCLOSE(NULL, file);
 		}
+		SAFE_FCLOSE(NULL, file);
 	}
 
 	if (stat(dev, &buf) < 0)
