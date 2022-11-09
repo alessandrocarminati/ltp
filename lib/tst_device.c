@@ -35,7 +35,6 @@
 #include <sys/sysmacros.h>
 #include <linux/btrfs.h>
 #include <linux/limits.h>
-#include <dirent.h>
 #include "lapi/syscalls.h"
 #include "test.h"
 #include "safe_macros.h"
@@ -526,9 +525,10 @@ void tst_find_backing_dev(const char *path, char *dev)
 	struct stat buf;
 	struct btrfs_ioctl_fs_info_args args = {0};
 	struct dirent *d;
-	char uevent_path[PATH_MAX];
+	char uevent_path[PATH_MAX+PATH_MAX+10]; //10 is for the static uevent path
 	char dev_name[NAME_MAX];
 	char bdev_path[PATH_MAX];
+	char tmp_path[PATH_MAX];
 	char btrfs_uuid_str[UUID_STR_SZ];
 	DIR *dir;
 	unsigned int dev_major, dev_minor;
@@ -536,6 +536,10 @@ void tst_find_backing_dev(const char *path, char *dev)
 
 	if (stat(path, &buf) < 0)
 		tst_brkm(TWARN | TERRNO, NULL, "stat() failed");
+	strncpy(tmp_path, path, PATH_MAX-1);
+	tmp_path[PATH_MAX-1] = '\0';
+	if (S_ISREG(buf.st_mode))
+		dirname(tmp_path);
 
 	dev_major = major(buf.st_dev);
 	dev_minor = minor(buf.st_dev);
@@ -544,7 +548,7 @@ void tst_find_backing_dev(const char *path, char *dev)
 	if (dev_major == 0) {
 		tst_resm(TINFO, "Use BTRFS specific strategy");
 
-		fd = SAFE_OPEN(NULL, dirname(path), O_DIRECTORY);
+		fd = SAFE_OPEN(NULL, tmp_path, O_DIRECTORY);
 		if (!ioctl(fd, BTRFS_IOC_FS_INFO, &args)) {
 			sprintf(btrfs_uuid_str,
 				UUID_FMT,
@@ -559,12 +563,14 @@ void tst_find_backing_dev(const char *path, char *dev)
 			sprintf(bdev_path,
 				"/sys/fs/btrfs/%s/devices", btrfs_uuid_str);
 		} else {
-			tst_brkm(TBROK, NULL, "BTRFS ioctl failed. Is %s on a tmpfs?", path);
+			if (errno == ENOTTY)
+				tst_brkm(TBROK | TERRNO, NULL, "BTRFS ioctl failed. Is %s on a tmpfs?", path);
+			tst_brkm(TBROK | TERRNO, NULL, "BTRFS ioctl failed with %d.", errno);
 			}
 		SAFE_CLOSE(NULL, fd);
 		dir = SAFE_OPENDIR(NULL, bdev_path);
-		while (d = SAFE_READDIR(NULL, dir)) {
-			if (d->d_name[0]!='.')
+		while ((d = SAFE_READDIR(NULL, dir))) {
+			if (d->d_name[0] != '.')
 				break;
 		}
 		uevent_path[0] = '\0';
@@ -572,7 +578,7 @@ void tst_find_backing_dev(const char *path, char *dev)
 			sprintf(uevent_path, "%s/%s/uevent",
 				bdev_path, d->d_name);
 		} else {
-			tst_brkm(TBROK, NULL, "No backining device found");
+			tst_brkm(TBROK | TERRNO, NULL, "No backining device found while looking in %s.", bdev_path);
 			}
 		if (SAFE_READDIR(NULL, dir))
 			tst_resm(TINFO, "Warning: used first of multiple backing device.");
