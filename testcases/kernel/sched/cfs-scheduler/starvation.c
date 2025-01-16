@@ -82,6 +82,9 @@ static void setup(void)
 
 	CPU_ZERO(&mask);
 
+	if (tst_check_preempt_rt())
+		tst_brk(TBROK, "This test is not designed for the RT kernel");
+
 	/* Restrict test to a single cpu */
 	if (sched_getaffinity(0, sizeof(mask), &mask) < 0)
 		tst_brk(TBROK | TERRNO, "sched_getaffinity() failed");
